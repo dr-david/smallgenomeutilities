@@ -14,16 +14,6 @@ from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 from Bio.Seq import Seq
 from smallgenomeutilities.__checkPath__ import CheckPath
-from smallgenomeutilities.__pileup__ import get_counts
-
-__author__ = "Susana Posada Cespedes"
-__copyright__ = "Copyright 2017"
-__credits__ = "Susana Posada Cespedes"
-__license__ = "GPL2+"
-__maintainer__ = "Susana Posada Cespedes"
-__email__ = "hiv-cbg@bsse.ethz.ch"
-__status__ = "Development"
-
 
 def parse_args():
     """ Set up the parsing of command-line arguments """
@@ -31,116 +21,122 @@ def parse_args():
             description="Script to construct consensus sequences",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     requiredNamed = parser.add_argument_group('required named arguments')
-    requiredNamed.add_argument(
-        "-i", required=True, metavar='BAM', dest='bamfile',
-        help="Input BAM file"
-    )
-    parser.add_argument(
-        "-f", required=False, metavar='FASTA', dest='reference', type=str,
-        help="Fasta file containing the reference sequence"
-    )
-    parser.add_argument(
-        "-r", required=False, default=None, metavar='BED', dest='region',
-        type=str,
-        help="Region of interested in BED format, e.g. HXB2:2253-3869. Loci "
-             "are interpreted using 0-based indexing, and a half-open "
-             "interval is used, i.e, [start:end)"
-    )
-    parser.add_argument(
-        "-c", required=False, default=50, metavar='INT', dest='min_coverage',
-        type=int, help="Minimum read depth for reporting variants per locus"
-    )
-    parser.add_argument(
-        "-q", required=False, default=15, metavar='INT', dest='qual_thrd',
-        type=int,
-        help="Minimum phred quality score a base has to reach to be counted"
-    )
-    parser.add_argument(
-        "-a", required=False, default=0.05, metavar='FLOAT', dest='min_freq',
-        type=float, help="Minimum frequency for an ambiguous nucleotide"
-    )
-    parser.add_argument(
-        "-n", required=False, default=None, metavar='INT', dest='n_threshold',
-        type=int, help="Read count below which ambiguous base 'n' is reported"
-    )
-    parser.add_argument(
-        "-N", required=False, default="CONSENSUS", type=str, metavar='STR',
-        dest="sampleID", help="Patient/sample identifier"
-    )
-    parser.add_argument(
-        "-o", required=False, default=os.getcwd(), action=CheckPath,
-        metavar='PATH', dest='outdir', help="Output directory"
-    )
+    requiredNamed.add_argument("-i", required=True, metavar='BAM',
+                               dest='bamfile', help="Input BAM file")
+    parser.add_argument("-f", required=False, metavar='FASTA', dest='reference',
+                        type=str,
+                        help="Fasta file containing the reference sequence")
+    parser.add_argument("-r", required=False, default=None, metavar='BED',
+                        dest='region', type=str,
+                        help="Region of interested in BED format, e.g. HXB2:2253-3869. Loci are interpreted using 0-based indexing, and a half-open interval is used, i.e, [start:end)")
+    parser.add_argument("-c", required=False, default=50, metavar='INT',
+                        dest='min_coverage', type=int,
+                        help="Minimum read depth for reporting variants per locus")
+    parser.add_argument("-q", required=False, default=15, metavar='INT',
+                        dest='qual_thrd', type=int,
+                        help="Minimum phred quality score a base has to reach to be counted")
+    parser.add_argument("-a", required=False, default=0.05, metavar='FLOAT',
+                        dest='min_freq', type=float, help="Minimum frequency for an ambiguous nucleotide")
+    parser.add_argument("-n", required=False, default=None, metavar='INT',
+                        dest='n_threshold', type=int,
+                        help="Read count below which ambiguous base 'n' is reported")
+    parser.add_argument("-N", required=False, default="CONSENSUS", type=str,
+                        metavar='STR', dest="sampleID",
+                        help="Patient/sample identifier")
+    parser.add_argument("-o", required=False, default=os.getcwd(),
+                        action=CheckPath, metavar='PATH', dest='outdir',
+                        help="Output directory")
 
     return parser.parse_args()
 
 
-def majority_vote(counts, cov_thrd, alphabet):
-    majority = np.argmax(counts, 0)
-    cons_majority = alphabet[majority]
 
-    return cons_majority, majority
+def first_base_count(seq_count_tuple):
+    '''Return the counts of unique first bases of an alignment column sequence count tuple possibly containing indels.
+    
+    Parameters:
+        seq_count_tuple: tuple of the form ([bases/indels], [counts])
+            The tuple contains a list of bases and (possibly) indels at this alignment column, 
+            and a list of the respective counts, as returned by np.unique(x, return_counts=True),
+            where x is a column of a AlignmentFile.pileup()
+    
+    Returns:
+        a tuple of the form ([bases], [counts]), where [bases] is a list of bases including the first bases
+        of eventual indels and [counts] are their respective counts
+    '''
+    first_bases = [u[0] for u in seq_count_tuple[0]]
+    first_bases_uniques = np.unique(first_bases, return_inverse=True)
+    counts_collapsed = np.zeros_like(first_bases_uniques[0], dtype="int")
+    for i in range(len(first_bases_uniques[1])):
+        counts_collapsed[first_bases_uniques[1][i]] += seq_count_tuple[1][i]
+    
+    return (first_bases_uniques[0], counts_collapsed)
 
+def build_insert_matrix(seq_count_tuple):
+    '''Build an insert matrix from a sequence count tuple.
+    
+    Parameters:
+        seq_count_tuple: tuple of the form ([bases/indels], [counts])
+            The tuple contains a list of bases and (possibly) indels at this alignment column, 
+            and a list of the respective counts, as returned by np.unique(x, return_counts=True),
+            where x is a column of a AlignmentFile.pileup()
+        
+    Returns:
+        insert_matrix: np.array [n_inserts, max_insert_length]
+            The insert matrix contains one row per insert and as many column as there are bases in the largest insert.
+            The shorter inserts are right-padded with '*'. 
+    '''
+    insert_matrix = []
+    length = 0
+    #make list of insertions at that position
+    for j in range(len(seq_count_tuple[0])):
+        if (len(seq_count_tuple[0][j])>2) and (seq_count_tuple[0][j][1] == '+'):
+            for n in range(seq_count_tuple[1][j]):
+                insert_matrix.append(list(seq_count_tuple[0][j][3:]))
+            if length < int(seq_count_tuple[0][j][2:3]):
+                length = int(seq_count_tuple[0][j][2:3])
+    #right pad shorter insertions with "-"         
+    for m in range(len(insert_matrix)):
+        while len(insert_matrix[m]) < length:
+            insert_matrix[m].append('*') #replace here '*'->'-' if we arent supposed to count it as deletion
+    return np.array(insert_matrix)
 
-def ambiguous_bases(counts, min_freq, majority=None):
-    """
-    counts: nucleotide counts per locus. Columns correspond to loci and rows to
-    nucleotides A, C, G, T and deletions, in this order.
-    """
-    # Mapping {1: 'T', 2:'G', 3:'K', 4:'C', 5:'Y', 6:'S', 7:'B', 8:'A', 9:'W',
-    #          10:'R', 11:'D', 12:'M', 13:'H', 14:'V', 15:'N'}
-    IUPAC_CODE = np.array(('n', 'T', 'G', 'K', 'C', 'Y', 'S', 'B', 'A', 'W',
-                           'R', 'D', 'M', 'H', 'V', 'N'))
-    coverage = np.sum(counts, 0)
-    # To report ambiguous bases, every base with a relative frequency greater
-    # or equal to min_freq is accounted for. But at least two reads should
-    # support that base
-    min_count = np.ceil(min_freq * coverage)
-    min_count[min_count <= 1] = 2
-    aux = counts >= min_count
-    aux = aux.astype(int)
-    encoding = np.array((8, 4, 2, 1))
-    for idx, val in enumerate(encoding):
-        aux[idx, aux[idx, :] == 1] = val
-    cons_ambig = IUPAC_CODE[np.sum(aux[:4, ], 0)]
-
-    # Take into account deletions, when information is available
-    if counts.shape[0] > 4:
-        assert majority is not None
-        cons_ambig[np.logical_and(majority == 4, aux[4, :] == 1)] = '-'
-
-    return cons_ambig
-
-
-def mask_low_quality(consensus, read_count, min_coverage, n_threshold,
-                     reference=None, reference_name=None, start=None,
-                     end=None):
-    mask = read_count < min_coverage
-    aux = np.char.lower(consensus[mask])
-    consensus[mask] = aux
-
-    if n_threshold is None:
-        # Handle positions with zero read-count
-        mask = read_count == 0
-        if reference is None:
-            consensus[mask] = 'n'
-        else:
-            reference = pysam.FastaFile(reference)
-            assert reference.references[0] == reference_name, (
-                "the name of the genomic region and the reference differ")
-            reference = reference.fetch(
-                reference=reference_name, start=start, end=end).lower()
-            aux = [reference[idx] for idx in range(len(reference)) if mask[idx]]
-            consensus[mask] = aux
-    else:
-        mask_n = read_count < n_threshold
-        consensus[mask_n] = 'n'
-
-    return consensus
-
+def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C']):
+    '''Function to build local consensus from insert matrix.
+    
+    Parameters:
+        insert_matrix: np.array [n_inserts, max_insert_length]
+            As returned by build_insert_matrix()
+        authorised_alphabet: list of characters
+            Characters in the insert_matrix that do not belong to authorised_alphabet will not be counted when
+            building the local consensus.
+        
+    Returns:
+        seq_out: list of characters
+            A local consensus sequence built from the most frequent bases of each column of the consensus matrix. 
+        
+    '''
+    seq_out = []
+    for c in range(insert_matrix.shape[1]):
+        #filter matrix column keeping only elements of authorised alphabet
+        matrix_column = insert_matrix[:,c][np.in1d(insert_matrix[:,c], authorised_alphabet)]
+        if matrix_column.size > 0: # i.e. if we havent filtered out the whole column
+            #keep most frequent
+            unique = np.unique(matrix_column, return_counts=True)
+            max_index = np.argmax(unique[1])
+            seq_out.append(unique[0][max_index])
+    return seq_out
+    
+    
 
 def main():
-    alphabet = np.array(['A', 'C', 'G', 'T', '-'])
+    # define alphabets for filtering sequences
+    alphabet = np.array(['A', 'T', 'G', 'C'])
+    alphabet_deletions = np.array(['A', 'T', 'G', 'C', '*'])
+    alphabet_ambiguous = np.array(['n', 'T', 'G', 'K', 'C', 'Y', 'S', 'B', 'A', 'W', 'R', 'D', 'M', 'H', 'V', 'N'])
+    alphabet_ambiguous_deletions = np.array(['n', 'T', 'G', 'K', 'C', 'Y', 'S', 'B', 'A', 'W', 'R', 'D', 'M', 'H', 'V', 'N', '*'])
+
+    # parse arguments
     args = parse_args()
 
     reference_name = None
@@ -156,66 +152,91 @@ def main():
         end = None
         sampleID = args.sampleID
 
-    # 1. Load BAM file and get counts per loci
+
+    # 1. Load BAM file and get base/count tuples per loci:
+    quer_sequences_count = []
     with pysam.AlignmentFile(args.bamfile, 'rb') as alnfile:
         if reference_name is None:
             reference_name = alnfile.references[0]
-        counts = alnfile.count_coverage(
+        # make list of ([bases], [counts]) tuples at each pileup column
+        pileup = alnfile.pileup(
             contig=reference_name, start=start, stop=end,
-            quality_threshold=args.qual_thrd)
-        counts = np.array(counts)
+            min_base_quality=args.qual_thrd)
+        for pos in pileup:
+            pileup_column = pos.get_query_sequences(add_indels=True)
+            count_tuple = np.unique(pileup_column, return_counts=True)
+            quer_sequences_count.append()
 
-        # Account for deletions w.r.t reference
-        region_len = counts.shape[1]
-        alphabet_len = alphabet.size
-        counts_dels = get_counts([
-            args.bamfile, reference_name, start, end, region_len, alphabet_len
-        ])
-        counts_dels = counts_dels.reshape((alphabet_len, region_len), order='F')
+    # 2. Build consensus sequence
+    
+    # lists to contain consensus sequences
+    cons_majority = [] # holds consensus sequence without deletions and without ambiguous bases
+    cons_majority_deletions = [] # holds consensus sequence with deletions and without ambiguous bases
+    cons_majority_ambiguous = [] # holds consensus sequence without deletions and with ambiguous bases
+    cons_majority_ambiguous_deletions = [] # holds consensus sequence with deletions and with ambiguous bases
+    
+    # iterate through the alignment columns counts and make local consensus for each output type
+    for column in quer_sequences_count:
+        # get the counts for only the first base
+        first_base_ambiguous_deletions = first_base_count(column)
+        # build the insert matrix
+        insert_matrix = build_insert_matrix(column)
+        
+        # 2.1 make consensus at column without deletions and without ambiguous bases
+        index = np.in1d(first_base_ambiguous_deletions[0], alphabet)
+        first_base = (first_base_ambiguous_deletions[0][index],
+                      first_base_ambiguous_deletions[1][index])
+        if first_base[0].size > 0: # i.e. if we havent filtered out the whole column
+            max_index = np.argmax(first_base[1])
+            cons_majority.append(first_base[0][max_index])
+        # add insertions
+        if insert_matrix.size > 0:
+            cons_majority.extend(collapse_insert_matrix(insert_matrix, alphabet))
+        
+        # 2.2 make consensus at column with deletions and without ambiguous bases
+        index_deletions = np.in1d(first_base_ambiguous_deletions[0], alphabet_deletions)
+        first_base_deletions = (first_base_ambiguous_deletions[0][index_deletions],
+                                first_base_ambiguous_deletions[1][index_deletions])
+        if first_base_deletions[0].size > 0: # i.e. if we havent filtered out the whole column
+            max_index_deletions = np.argmax(first_base_deletions[1])
+            cons_majority_deletions.append(first_base_deletions[0][max_index_deletions])
+        # add insertions
+        if insert_matrix.size > 0:
+            cons_majority_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_deletions))
+        
+        # 2.3 make consensus at column without deletions and with ambiguous bases
+        index_ambiguous = np.in1d(first_base_ambiguous_deletions[0], alphabet_ambiguous)
+        first_base_ambiguous = (first_base_ambiguous_deletions[0][index_ambiguous],
+                                first_base_ambiguous_deletions[1][index_ambiguous])
+        if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
+            max_index_ambiguous = np.argmax(first_base_ambiguous[1])
+            cons_majority_ambiguous.append(first_base_ambiguous[0][max_index_ambiguous])
+        # add insertions
+        if insert_matrix.size > 0:
+            cons_majority_ambiguous.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous))
+            
+        # 2.4 make consensus at column with deletions and with ambiguous bases    
+        max_index_ambiguous_deletions = np.argmax(first_base_ambiguous_deletions[1])
+        cons_majority_ambiguous_deletions.append(first_base_ambiguous_deletions[0][max_index_ambiguous_deletions])
+        # add insertions
+        if insert_matrix.size > 0:
+            cons_majority_ambiguous_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous_deletions))
 
-    # 2. Build majority consensus
-    cons_majority, majority_idx = majority_vote(
-        counts, args.min_coverage, alphabet)
-    cons_majority_dels, majority_idx = majority_vote(
-        counts_dels, args.min_coverage, alphabet)
-
-    # 3. Build consensus including ambiguous bases
-    cons_ambig = ambiguous_bases(counts, args.min_freq)
-    cons_ambig_dels = ambiguous_bases(counts_dels, args.min_freq, majority_idx)
-
-    # 4. Mask positions with low coverage
-    read_count = np.sum(counts, 0)
-    read_count_dels = np.sum(counts, 0)
-
-    cons_majority = mask_low_quality(
-        cons_majority, read_count, args.min_coverage, args.n_threshold,
-        reference=args.reference, reference_name=reference_name, start=start,
-        end=end)
-    cons_majority_dels = mask_low_quality(
-        cons_majority_dels, read_count_dels, args.min_coverage,
-        args.n_threshold, reference=args.reference,
-        reference_name=reference_name, start=start, end=end)
-    cons_ambig = mask_low_quality(
-        cons_ambig, read_count, args.min_coverage, args.n_threshold,
-        reference=args.reference, reference_name=reference_name, start=start,
-        end=end)
-    cons_ambig_dels = mask_low_quality(
-        cons_ambig_dels, read_count_dels, args.min_coverage, args.n_threshold,
-        reference=args.reference, reference_name=reference_name, start=start,
-        end=end)
-
-    # 4. Write to output
+    # 3. Write to output
     cons_majority = SeqRecord(
         Seq(''.join(cons_majority)), id=sampleID,
         description="| Majority-vote rule")
-    cons_ambig = SeqRecord(Seq(''.join(cons_ambig)),
-                           id=sampleID, description="| Ambiguous bases")
 
     cons_majority_dels = SeqRecord(
-        Seq(''.join(cons_majority_dels)), id=sampleID,
+        Seq(''.join(cons_majority_deletions)), id=sampleID,
         description="| Majority-vote rule")
+
+    cons_ambig = SeqRecord(
+        Seq(''.join(cons_majority_ambiguous)), id=sampleID,
+        description="| Ambiguous bases")
+
     cons_ambig_dels = SeqRecord(
-        Seq(''.join(cons_ambig_dels)), id=sampleID,
+        Seq(''.join(cons_majority_ambiguous_deletions)), id=sampleID,
         description="| Ambiguous bases")
 
     with open(os.path.join(args.outdir, "ref_majority.fasta"), "w") as outfile:
@@ -235,3 +256,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
