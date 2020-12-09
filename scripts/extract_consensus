@@ -165,7 +165,7 @@ def main():
         for pos in pileup:
             pileup_column = pos.get_query_sequences(add_indels=True)
             count_tuple = np.unique(pileup_column, return_counts=True)
-            quer_sequences_count.append()
+            quer_sequences_count.append(count_tuple)
 
     # 2. Build consensus sequence
     
