@@ -53,13 +53,13 @@ def parse_args():
 
 def first_base_count(seq_count_tuple):
     '''Return the counts of unique first bases of an alignment column sequence count tuple possibly containing indels.
-    
+
     Parameters:
         seq_count_tuple: tuple of the form ([bases/indels], [counts])
-            The tuple contains a list of bases and (possibly) indels at this alignment column, 
+            The tuple contains a list of bases and (possibly) indels at this alignment column,
             and a list of the respective counts, as returned by np.unique(x, return_counts=True),
             where x is a column of a AlignmentFile.pileup()
-    
+
     Returns:
         a tuple of the form ([bases], [counts]), where [bases] is a list of bases including the first bases
         of eventual indels and [counts] are their respective counts
@@ -69,22 +69,22 @@ def first_base_count(seq_count_tuple):
     counts_collapsed = np.zeros_like(first_bases_uniques[0], dtype="int")
     for i in range(len(first_bases_uniques[1])):
         counts_collapsed[first_bases_uniques[1][i]] += seq_count_tuple[1][i]
-    
+
     return (first_bases_uniques[0], counts_collapsed)
 
 def build_insert_matrix(seq_count_tuple):
     '''Build an insert matrix from a sequence count tuple.
-    
+
     Parameters:
         seq_count_tuple: tuple of the form ([bases/indels], [counts])
-            The tuple contains a list of bases and (possibly) indels at this alignment column, 
+            The tuple contains a list of bases and (possibly) indels at this alignment column,
             and a list of the respective counts, as returned by np.unique(x, return_counts=True),
             where x is a column of a AlignmentFile.pileup()
-        
+
     Returns:
         insert_matrix: np.array [n_inserts, max_insert_length]
             The insert matrix contains one row per insert and as many column as there are bases in the largest insert.
-            The shorter inserts are right-padded with '*'. 
+            The shorter inserts are right-padded with '*'.
     '''
     insert_matrix = []
     length = 0
@@ -95,7 +95,7 @@ def build_insert_matrix(seq_count_tuple):
                 insert_matrix.append(list(seq_count_tuple[0][j][3:]))
             if length < int(seq_count_tuple[0][j][2:3]):
                 length = int(seq_count_tuple[0][j][2:3])
-    #right pad shorter insertions with "-"         
+    #right pad shorter insertions with "-"
     for m in range(len(insert_matrix)):
         while len(insert_matrix[m]) < length:
             insert_matrix[m].append('*') #replace here '*'->'-' if we arent supposed to count it as deletion
@@ -103,18 +103,18 @@ def build_insert_matrix(seq_count_tuple):
 
 def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C']):
     '''Function to build local consensus from insert matrix.
-    
+
     Parameters:
         insert_matrix: np.array [n_inserts, max_insert_length]
             As returned by build_insert_matrix()
         authorised_alphabet: list of characters
             Characters in the insert_matrix that do not belong to authorised_alphabet will not be counted when
             building the local consensus.
-        
+
     Returns:
         seq_out: list of characters
-            A local consensus sequence built from the most frequent bases of each column of the consensus matrix. 
-        
+            A local consensus sequence built from the most frequent bases of each column of the consensus matrix.
+
     '''
     seq_out = []
     for c in range(insert_matrix.shape[1]):
@@ -126,8 +126,8 @@ def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C
             max_index = np.argmax(unique[1])
             seq_out.append(unique[0][max_index])
     return seq_out
-    
-    
+
+
 
 def main():
     # define alphabets for filtering sequences
@@ -168,20 +168,20 @@ def main():
             quer_sequences_count.append(count_tuple)
 
     # 2. Build consensus sequence
-    
+
     # lists to contain consensus sequences
     cons_majority = [] # holds consensus sequence without deletions and without ambiguous bases
     cons_majority_deletions = [] # holds consensus sequence with deletions and without ambiguous bases
     cons_majority_ambiguous = [] # holds consensus sequence without deletions and with ambiguous bases
     cons_majority_ambiguous_deletions = [] # holds consensus sequence with deletions and with ambiguous bases
-    
+
     # iterate through the alignment columns counts and make local consensus for each output type
     for column in quer_sequences_count:
         # get the counts for only the first base
         first_base_ambiguous_deletions = first_base_count(column)
         # build the insert matrix
         insert_matrix = build_insert_matrix(column)
-        
+
         # 2.1 make consensus at column without deletions and without ambiguous bases
         index = np.in1d(first_base_ambiguous_deletions[0], alphabet)
         first_base = (first_base_ambiguous_deletions[0][index],
@@ -192,7 +192,7 @@ def main():
         # add insertions
         if insert_matrix.size > 0:
             cons_majority.extend(collapse_insert_matrix(insert_matrix, alphabet))
-        
+
         # 2.2 make consensus at column with deletions and without ambiguous bases
         index_deletions = np.in1d(first_base_ambiguous_deletions[0], alphabet_deletions)
         first_base_deletions = (first_base_ambiguous_deletions[0][index_deletions],
@@ -203,7 +203,7 @@ def main():
         # add insertions
         if insert_matrix.size > 0:
             cons_majority_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_deletions))
-        
+
         # 2.3 make consensus at column without deletions and with ambiguous bases
         index_ambiguous = np.in1d(first_base_ambiguous_deletions[0], alphabet_ambiguous)
         first_base_ambiguous = (first_base_ambiguous_deletions[0][index_ambiguous],
@@ -214,10 +214,15 @@ def main():
         # add insertions
         if insert_matrix.size > 0:
             cons_majority_ambiguous.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous))
-            
-        # 2.4 make consensus at column with deletions and with ambiguous bases    
-        max_index_ambiguous_deletions = np.argmax(first_base_ambiguous_deletions[1])
-        cons_majority_ambiguous_deletions.append(first_base_ambiguous_deletions[0][max_index_ambiguous_deletions])
+
+        # 2.4 make consensus at column with deletions and with ambiguous bases
+        index_ambiguous_deletions = np.in1d(first_base_ambiguous_deletions[0], alphabet_ambiguous_deletions)
+        first_base_ambiguous_deletions = (first_base_ambiguous_deletions[0][index_ambiguous_deletions],
+                                          first_base_ambiguous_deletions[1][index_ambiguous_deletions])
+
+        if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
+            max_index_ambiguous_deletions = np.argmax(first_base_ambiguous_deletions[1])
+            cons_majority_ambiguous_deletions.append(first_base_ambiguous_deletions[0][max_index_ambiguous_deletions])
         # add insertions
         if insert_matrix.size > 0:
             cons_majority_ambiguous_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous_deletions))
@@ -256,6 +261,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
