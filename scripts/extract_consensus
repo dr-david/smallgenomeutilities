@@ -127,7 +127,38 @@ def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C
             seq_out.append(unique[0][max_index])
     return seq_out
 
+def check_min_coverage(first_base):
+    # if read depth is lower than min_coverage then write lowercase nucleotide
+    if np.sum(first_base[1])< min_coverage:
+        return np.char.lower(first_base[0])
+    else:
+        return first_base[0]
 
+def mask_low_quality(consensus, read_count, min_coverage, n_threshold,
+                     reference=None, reference_name=None, start=None,
+                     end=None):
+    mask = read_count < min_coverage
+    aux = np.char.lower(consensus[mask])
+    consensus[mask] = aux
+
+    if n_threshold is None:
+        # Handle positions with zero read-count
+        mask = read_count == 0
+        if reference is None:
+            consensus[mask] = 'n'
+        else:
+            reference = pysam.FastaFile(reference)
+            assert reference.references[0] == reference_name, (
+                "the name of the genomic region and the reference differ")
+            reference = reference.fetch(
+                reference=reference_name, start=start, end=end).lower()
+            aux = [reference[idx] for idx in range(len(reference)) if mask[idx]]
+            consensus[mask] = aux
+    else:
+        mask_n = read_count < n_threshold
+        consensus[mask_n] = 'n'
+
+    return consensus
 
 def main():
     # define alphabets for filtering sequences
@@ -188,7 +219,8 @@ def main():
                       first_base_ambiguous_deletions[1][index])
         if first_base[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index = np.argmax(first_base[1])
-            cons_majority.append(first_base[0][max_index])
+            cons_majority.append(check_min_coverage(first_base)[max_index])
+        else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
             cons_majority.extend(collapse_insert_matrix(insert_matrix, alphabet))
@@ -199,7 +231,8 @@ def main():
                                 first_base_ambiguous_deletions[1][index_deletions])
         if first_base_deletions[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index_deletions = np.argmax(first_base_deletions[1])
-            cons_majority_deletions.append(first_base_deletions[0][max_index_deletions])
+            cons_majority_deletions.append(check_min_coverage(first_base_deletions)[max_index_deletions])
+        else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
             cons_majority_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_deletions))
@@ -210,7 +243,8 @@ def main():
                                 first_base_ambiguous_deletions[1][index_ambiguous])
         if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index_ambiguous = np.argmax(first_base_ambiguous[1])
-            cons_majority_ambiguous.append(first_base_ambiguous[0][max_index_ambiguous])
+            cons_majority_ambiguous.append(check_min_coverage(first_base_ambiguous)[max_index_ambiguous])
+        else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
             cons_majority_ambiguous.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous))
@@ -222,7 +256,8 @@ def main():
 
         if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index_ambiguous_deletions = np.argmax(first_base_ambiguous_deletions[1])
-            cons_majority_ambiguous_deletions.append(first_base_ambiguous_deletions[0][max_index_ambiguous_deletions])
+            cons_majority_ambiguous_deletions.append(check_min_coverage(first_base_ambiguous_deletions)[max_index_ambiguous_deletions])
+        else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
             cons_majority_ambiguous_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous_deletions))
