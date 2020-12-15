@@ -127,9 +127,10 @@ def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C
             seq_out.append(unique[0][max_index])
     return seq_out
 
-def check_coverage(first_base, min_coverage, n_threshold, reference = None,
+def check_coverage(first_base, min_coverage, n_threshold, curr_pos, reference = None,
                    reference_name = None, start=None, end=None):
     '''
+    curr_pos: current position in the reference sequence
     If read depth is lower than min_coverage lowercase letters are reported
     Read count below n_threshold are reported as ambiguous base 'n'.
     If there is no n_threshold, base with zero count output 'n' or if reference available take value of reference.
@@ -147,16 +148,12 @@ def check_coverage(first_base, min_coverage, n_threshold, reference = None,
             if reference is None:
                 first_base[0][max_index] = 'n'
             else:
-                '''
-                TODO: pass index of column to reference
                 reference = pysam.FastaFile(reference)
                 assert reference.references[0] == reference_name, (
                     "the name of the genomic region and the reference differ")
                 reference = reference.fetch(
                     reference=reference_name, start=start, end=end).lower()
-                aux = [reference[idx] for idx in range(len(reference)) if mask[idx]]
-                return aux
-                '''
+                first_base[0][max_index] = reference[curr_pos]
 
     elif np.sum(first_base[1]) < n_threshold:
         first_base[0][max_index] = 'n'
@@ -210,6 +207,7 @@ def main():
     cons_majority_ambiguous = [] # holds consensus sequence without deletions and with ambiguous bases
     cons_majority_ambiguous_deletions = [] # holds consensus sequence with deletions and with ambiguous bases
 
+    curr_pos = 0 # current postition in reference sequence
     # iterate through the alignment columns counts and make local consensus for each output type
     for column in quer_sequences_count:
         # get the counts for only the first base
@@ -224,7 +222,7 @@ def main():
         if first_base[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index = np.argmax(first_base[1])
             first_base = check_coverage(first_base, args.min_coverage,
-                                        args.n_threshold,reference=args.reference,
+                                        args.n_threshold,curr_pos, reference=args.reference,
                                         reference_name=reference_name, start=start,
                                         end=end)
             cons_majority.append(first_base[0][max_index])
@@ -240,7 +238,7 @@ def main():
         if first_base_deletions[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index_deletions = np.argmax(first_base_deletions[1])
             first_base_deletions = check_coverage(first_base_deletions,args.min_coverage,
-                                                  args.n_threshold,reference=args.reference,
+                                                  args.n_threshold,curr_pos, reference=args.reference,
                                                   reference_name=reference_name, start=start,
                                                   end=end)
             cons_majority_deletions.append(first_base_deletions[0][max_index_deletions])
@@ -256,7 +254,7 @@ def main():
         if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index_ambiguous = np.argmax(first_base_ambiguous[1])
             first_base_ambiguous = check_coverage(first_base_ambiguous, args.min_coverage,
-                                                  args.n_threshold,reference=args.reference,
+                                                  args.n_threshold,curr_pos, reference=args.reference,
                                                   reference_name=reference_name, start=start,
                                                   end=end)
             cons_majority_ambiguous.append(first_base_ambiguous[0][max_index_ambiguous])
@@ -273,7 +271,7 @@ def main():
         if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index_ambiguous_deletions = np.argmax(first_base_ambiguous_deletions[1])
             first_base_ambiguous_deletions= check_coverage(first_base_ambiguous_deletions, args.min_coverage,
-                                                           args.n_threshold,reference=args.reference,
+                                                           args.n_threshold,curr_pos, reference=args.reference,
                                                            reference_name=reference_name, start=start,
                                                            end=end)
             cons_majority_ambiguous_deletions.append(first_base_ambiguous_deletions[0][max_index_ambiguous_deletions])
@@ -281,6 +279,9 @@ def main():
         # add insertions
         if insert_matrix.size > 0:
             cons_majority_ambiguous_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous_deletions))
+
+        # next column (position) in reference seq
+        curr_pos+=1
 
     # 3. Write to output
     cons_majority = SeqRecord(
