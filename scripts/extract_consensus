@@ -241,7 +241,14 @@ def main():
                                                   args.n_threshold,curr_pos, reference=args.reference,
                                                   reference_name=reference_name, start=start,
                                                   end=end)
-            cons_majority_deletions.append(first_base_deletions[0][max_index_deletions])
+            # count if deletions account for more than all bases combined 
+            counts_del = first_base_deletions[1][first_base_deletions[0]=="*"] 
+            counts_notdel = np.sum(first_base_deletions[1][first_base_deletions[0]!="*"])
+            # if deletions account for more than all bases combined output a deletion
+            if counts_del > counts_notdel:
+                cons_majority_deletions.append("*")
+            else:
+                cons_majority_deletions.append(first_base_deletions[0][max_index_deletions])
         else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
