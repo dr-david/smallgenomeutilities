@@ -129,8 +129,6 @@ def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C
 
     '''
     seq_out = []
-    print('insert_matrix.shape', insert_matrix.shape)
-    print('insert_matrix.shape[1]', insert_matrix.shape[1])
     for c in range(insert_matrix.shape[1]):
         #filter matrix column keeping only elements of authorised alphabet
         matrix_column = insert_matrix[:,c][np.in1d(insert_matrix[:,c], authorised_alphabet)]
@@ -174,11 +172,12 @@ def check_coverage(first_base, min_coverage, n_threshold, curr_pos, reference = 
 
     return first_base
 
-def ambiguous_bases(first_base, min_freq, majority=None, deletions=False):
+def ambiguous_bases(first_base, min_freq):
     '''
     To report ambiguous bases, every base with a relative frequency greater or
     equal to min_freq is accounted for. But at least two reads should support
     that base.
+    returns ambiguous base at current position
     '''
     coverage = np.sum(first_base[1])
     min_count = min_freq*coverage
@@ -188,48 +187,35 @@ def ambiguous_bases(first_base, min_freq, majority=None, deletions=False):
     #TODO: what to do if len(idx) is zero, read counts are insufficient
 
     # only one base has relative frequency >= min_count
-    if len(idx)==1:
+    if len(first_base[0][idx])==1:
         ambiguous_base= first_base[0][idx]
         return ambiguous_base
     # IUPAC nucleotide code form
     # https://www.bioinformatics.org/sms/iupac.html
     if set(first_base[0][idx])==set(['A','G']):
-        ambiguous_base = 'R'
-        return ambiguous_base
+        return ['R']
     if set(first_base[0][idx])==set(['C','T']):
-        ambiguous_base = 'Y'
-        return ambiguous_base
+        return ['Y']
     if set(first_base[0][idx])==set(['G','C']):
-        ambiguous_base = 'S'
-        return ambiguous_base
+        return ['S']
     if set(first_base[0][idx])==set(['A','T']):
-        ambiguous_base = 'W'
-        return ambiguous_base
+        return ['W']
     if set(first_base[0][idx])==set(['T','G']):
-        ambiguous_base = 'K'
-        return ambiguous_base
+        return ['K']
     if set(first_base[0][idx])==set(['A','C']):
-        ambiguous_base = 'M'
-        return ambiguous_base
+        return ['M']
     if set(first_base[0][idx])==set(['G','C','T']):
-        ambiguous_base = 'B'
-        return ambiguous_base
+        return ['B']
     if set(first_base[0][idx])==set(['G','A','T']):
-        ambiguous_base = 'D'
-        return ambiguous_base
+        return ['D']
     if set(first_base[0][idx])==set(['C','A','T']):
-        ambiguous_base = 'H'
-        return ambiguous_base
+        return ['H']
     if set(first_base[0][idx])==set(['G','A','C']):
-        ambiguous_base = 'V'
-        return ambiguous_base
+        return ['V']
     if set(first_base[0][idx])==set(['G','A','C','T']):
-        ambiguous_base = 'N'
-        return ambiguous_base
+        return ['N']
     else:
         print('Error in ambiguous_bases function')
-
-
 
 
 def main():
@@ -268,7 +254,7 @@ def main():
             min_base_quality=args.qual_thrd)
         for pos in pileup:
             pileup_column = pos.get_query_sequences(add_indels=True)
-            pileup_column = [item.upper() for item in pileup_column] # Note: time expensive
+            pileup_column = [item.upper() for item in pileup_column]
             count_tuple = np.unique(pileup_column, return_counts=True)
             reference_pos.append(pos.reference_pos)
             quer_sequences_count.append(count_tuple)
@@ -302,8 +288,6 @@ def main():
         else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
-            print('column ', column)
-            print('insert_matrix', insert_matrix)
             cons_majority.extend(collapse_insert_matrix(insert_matrix, alphabet))
 
         # 2.2 make consensus at column with deletions and without ambiguous bases
@@ -329,15 +313,12 @@ def main():
                                 first_base_ambiguous_deletions[1][index_ambiguous])
 
         if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
-            max_index_ambiguous = np.argmax(first_base_ambiguous[1])
             first_base_ambiguous = check_coverage(first_base_ambiguous, args.min_coverage,
                                                   args.n_threshold,reference_pos[idx],
                                                   reference=args.reference,
                                                   reference_name=reference_name, start=start,
                                                   end=end)
-            #ambiguous_base = ambiguous_bases(first_base_ambiguous, 0.05, majority=None, deletions=False)
-            #cons_majority_ambiguous.append(ambiguous_base)
-            cons_majority_ambiguous.append(first_base_ambiguous[0][max_index_ambiguous])
+            cons_majority_ambiguous.extend(ambiguous_bases(first_base_ambiguous, args.min_freq))
         else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
@@ -355,7 +336,11 @@ def main():
                                                            reference=args.reference,
                                                            reference_name=reference_name, start=start,
                                                            end=end)
-            cons_majority_ambiguous_deletions.append(first_base_ambiguous_deletions[0][max_index_ambiguous_deletions])
+            # if deletion is majority print deletion
+            if first_base_ambiguous_deletions[0][max_index_ambiguous_deletions] == '*':
+                cons_majority_ambiguous_deletions.extend('*')
+            else:
+                cons_majority_ambiguous_deletions.extend(ambiguous_bases(first_base_ambiguous_deletions, args.min_freq))
         else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
