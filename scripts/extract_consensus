@@ -111,6 +111,17 @@ def build_insert_matrix(seq_count_tuple):
     for m in range(len(insert_matrix)):
         while len(insert_matrix[m]) < length:
             insert_matrix[m].append('*') #replace here '*'->'-' if we arent supposed to count it as deletion
+
+    # TODO: check if we really want a threshold like this
+    # threshold when to add insertions
+    # number of insertions = np.shape(insert_matrix)[0]
+    '''
+    print('insert_matrix', np.shape(insert_matrix)[0])
+    print('coverage at this position ',np.sum(seq_count_tuple[1]))
+    if np.shape(insert_matrix)[0] < 0.3 * np.sum(seq_count_tuple[1]):
+        insert_matrix = []
+    '''
+
     return np.array(insert_matrix)
 
 def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C']):
