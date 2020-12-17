@@ -375,7 +375,7 @@ def main():
         description="| Majority-vote rule")
 
     cons_ambig = SeqRecord(
-        Seq(cons_majority_ambiguous) + trailing_n), id=sampleID,
+        Seq(cons_majority_ambiguous), id=sampleID,
         description="| Ambiguous bases")
 
     cons_ambig_dels = SeqRecord(
