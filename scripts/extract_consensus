@@ -314,7 +314,7 @@ def main():
             counts_del = first_base_deletions[1][first_base_deletions[0]=="*"]
             counts_notdel = np.sum(first_base_deletions[1][first_base_deletions[0]!="*"])
             # if deletions account for more than all bases combined output a deletion
-            if counts_del > counts_notdel:
+            if counts_del.size > 0 and counts_del > counts_notdel:
                 cons_majority_deletions.append("*")
             else:
                 base = [first_base_deletions[0][max_index_deletions]]
@@ -357,7 +357,7 @@ def main():
             counts_del = first_base_ambiguous_deletions[1][first_base_ambiguous_deletions[0]=="*"]
             counts_notdel = np.sum(first_base_ambiguous_deletions[1][first_base_ambiguous_deletions[0]!="*"])
             # if deletions account for more than all bases combined output a deletion
-            if counts_del > counts_notdel:
+            if counts_del.size > 0 and counts_del > counts_notdel:
                 cons_majority_ambiguous_deletions.append("*")
             else:
                 base = ambiguous_bases(first_base_ambiguous_deletions, args.min_freq)
