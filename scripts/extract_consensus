@@ -172,6 +172,39 @@ def check_coverage(first_base, min_coverage, n_threshold, curr_pos, reference = 
 
     return first_base
 
+def check_coverage2(first_base,base, min_coverage, n_threshold, curr_pos, reference = None,
+                   reference_name = None, start=None, end=None):
+    '''
+    curr_pos: current position in the reference sequence
+    If read depth is lower than min_coverage lowercase letters are reported
+    Read count below n_threshold are reported as ambiguous base 'n'.
+    If there is no n_threshold, base with zero count output 'n' or if reference available take value of reference.
+    '''
+    if np.sum(first_base[1])< min_coverage:
+        # if read depth bigger than n_thres but still lower than min_coverage
+        # cast lowercase
+        base= np.char.lower(base)
+
+    if (n_threshold is None):
+        if (np.sum(first_base[1])==0):
+            # if there are is no n_thres but we have zero counts at position
+            # return 'n' or reference[curr_pos]
+            if reference is None:
+                base = ['n']
+            else:
+                reference = pysam.FastaFile(reference)
+                assert reference.references[0] == reference_name, (
+                    "the name of the genomic region and the reference differ")
+                reference = reference.fetch(
+                    reference=reference_name, start=start, end=end).lower()
+                base = reference[curr_pos]
+
+    elif np.sum(first_base[1]) < n_threshold:
+        base = ['n']
+
+    return base
+
+
 def ambiguous_bases(first_base, min_freq):
     '''
     To report ambiguous bases, every base with a relative frequency greater or
@@ -214,6 +247,8 @@ def ambiguous_bases(first_base, min_freq):
         return ['V']
     if set(first_base[0][idx])==set(['G','A','C','T']):
         return ['N']
+    else:
+        return ['n']
 
 
 def main():
@@ -279,12 +314,13 @@ def main():
                       first_base_ambiguous_deletions[1][index])
         if first_base[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index = np.argmax(first_base[1])
-            first_base = check_coverage(first_base, args.min_coverage,
+            base = [first_base[0][max_index]]
+            base = check_coverage2(first_base, base, args.min_coverage,
                                         args.n_threshold,reference_pos[idx], reference=args.reference,
                                         reference_name=reference_name, start=start,
                                         end=end)
-            cons_majority.append(first_base[0][max_index])
-        else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
+            cons_majority.extend(base)
+        else: cons_majority.extend(['n']) # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
             cons_majority.extend(collapse_insert_matrix(insert_matrix, alphabet))
@@ -295,11 +331,6 @@ def main():
                                 first_base_ambiguous_deletions[1][index_deletions])
         if first_base_deletions[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index_deletions = np.argmax(first_base_deletions[1])
-            first_base_deletions = check_coverage(first_base_deletions,args.min_coverage,
-                                                  args.n_threshold,reference_pos[idx],
-                                                  reference=args.reference,
-                                                  reference_name=reference_name, start=start,
-                                                  end=end)
             # count if deletions account for more than all bases combined
             counts_del = first_base_deletions[1][first_base_deletions[0]=="*"]
             counts_notdel = np.sum(first_base_deletions[1][first_base_deletions[0]!="*"])
@@ -307,8 +338,13 @@ def main():
             if counts_del > counts_notdel:
                 cons_majority_deletions.append("*")
             else:
-                cons_majority_deletions.append(first_base_deletions[0][max_index_deletions])
-        else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
+                base = [first_base_deletions[0][max_index_deletions]]
+                base = check_coverage2(first_base_deletions,base,args.min_coverage,
+                                      args.n_threshold,reference_pos[idx],
+                                      reference=args.reference,reference_name=reference_name,
+                                      start=start,end=end)
+                cons_majority_deletions.extend(base)
+        else: cons_majority.append('n') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
             cons_majority_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_deletions))
@@ -319,13 +355,13 @@ def main():
                                 first_base_ambiguous_deletions[1][index_ambiguous])
 
         if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
-            first_base_ambiguous = check_coverage(first_base_ambiguous, args.min_coverage,
-                                                  args.n_threshold,reference_pos[idx],
-                                                  reference=args.reference,
-                                                  reference_name=reference_name, start=start,
-                                                  end=end)
-            cons_majority_ambiguous.extend(ambiguous_bases(first_base_ambiguous, args.min_freq))
-        else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
+            base = ambiguous_bases(first_base_ambiguous, args.min_freq)
+            base = check_coverage2(first_base_ambiguous, base, args.min_coverage,
+                                    args.n_threshold,reference_pos[idx],
+                                    reference=args.reference,reference_name=reference_name,
+                                    start=start, end=end)
+            cons_majority_ambiguous.extend(base)
+        else: cons_majority.append('n') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
             cons_majority_ambiguous.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous))
@@ -337,17 +373,21 @@ def main():
 
         if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index_ambiguous_deletions = np.argmax(first_base_ambiguous_deletions[1])
-            first_base_ambiguous_deletions= check_coverage(first_base_ambiguous_deletions,args.min_coverage,
-                                                           args.n_threshold,reference_pos[idx],
-                                                           reference=args.reference,
-                                                           reference_name=reference_name, start=start,
-                                                           end=end)
             # if deletion is majority print deletion
-            if first_base_ambiguous_deletions[0][max_index_ambiguous_deletions] == '*':
-                cons_majority_ambiguous_deletions.extend('*')
+            # count if deletions account for more than all bases combined
+            counts_del = first_base_ambiguous_deletions[1][first_base_ambiguous_deletions[0]=="*"]
+            counts_notdel = np.sum(first_base_ambiguous_deletions[1][first_base_ambiguous_deletions[0]!="*"])
+            # if deletions account for more than all bases combined output a deletion
+            if counts_del > counts_notdel:
+                cons_majority_ambiguous_deletions.append("*")
             else:
-                cons_majority_ambiguous_deletions.extend(ambiguous_bases(first_base_ambiguous_deletions, args.min_freq))
-        else: cons_majority.append('N') # if we filtered out the whole column we use 'N'
+                base = ambiguous_bases(first_base_ambiguous_deletions, args.min_freq)
+                base = check_coverage2(first_base_ambiguous_deletions, base, args.min_coverage,
+                                       args.n_threshold,reference_pos[idx],
+                                       reference=args.reference,reference_name=reference_name,
+                                       start=start, end=end)
+                cons_majority_ambiguous_deletions.extend(base)
+        else: cons_majority.append('n') # if we filtered out the whole column we use 'N'
         # add insertions
         if insert_matrix.size > 0:
             cons_majority_ambiguous_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous_deletions))
