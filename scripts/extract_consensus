@@ -309,7 +309,6 @@ def main():
         first_base_deletions = (first_base_ambiguous_deletions[0][index_deletions],
                                 first_base_ambiguous_deletions[1][index_deletions])
         if first_base_deletions[0].size > 0: # i.e. if we havent filtered out the whole column
-            max_index_deletions = np.argmax(first_base_deletions[1])
             # count if deletions account for more than all bases combined
             counts_del = first_base_deletions[1][first_base_deletions[0]=="*"]
             counts_notdel = np.sum(first_base_deletions[1][first_base_deletions[0]!="*"])
@@ -317,6 +316,10 @@ def main():
             if counts_del.size > 0 and counts_del > counts_notdel:
                 cons_majority_deletions.append("*")
             else:
+                # set count of deletions to -1 so it will not be considered in the argmax
+                first_base_deletions[1][first_base_deletions[0]=="*"] = -1
+                # select most frequent base
+                max_index_deletions = np.argmax(first_base_deletions[1])
                 base = [first_base_deletions[0][max_index_deletions]]
                 base = check_coverage(first_base_deletions,base,args.min_coverage,
                                       args.n_threshold,reference_pos[idx],
@@ -350,8 +353,7 @@ def main():
         first_base_ambiguous_deletions = (first_base_ambiguous_deletions[0][index_ambiguous_deletions],
                                           first_base_ambiguous_deletions[1][index_ambiguous_deletions])
 
-        if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
-            max_index_ambiguous_deletions = np.argmax(first_base_ambiguous_deletions[1])
+        if first_base_ambiguous_deletions[0].size > 0: # i.e. if we havent filtered out the whole column
             # if deletion is majority print deletion
             # count if deletions account for more than all bases combined
             counts_del = first_base_ambiguous_deletions[1][first_base_ambiguous_deletions[0]=="*"]
@@ -360,6 +362,10 @@ def main():
             if counts_del.size > 0 and counts_del > counts_notdel:
                 cons_majority_ambiguous_deletions.append("*")
             else:
+                # set count of deletions to -1 so it will not be considered in the argmax
+                first_base_ambiguous_deletions[1][first_base_ambiguous_deletions[0]=="*"] = -1
+                # select most frequent base
+                max_index_ambiguous_deletions = np.argmax(first_base_ambiguous_deletions[1])
                 base = ambiguous_bases(first_base_ambiguous_deletions, args.min_freq)
                 base = check_coverage(first_base_ambiguous_deletions, base, args.min_coverage,
                                        args.n_threshold,reference_pos[idx],
