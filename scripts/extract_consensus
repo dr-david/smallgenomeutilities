@@ -139,40 +139,8 @@ def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C
             seq_out.append(unique[0][max_index])
     return seq_out
 
-def check_coverage(first_base, min_coverage, n_threshold, curr_pos, reference = None,
-                   reference_name = None, start=None, end=None):
-    '''
-    curr_pos: current position in the reference sequence
-    If read depth is lower than min_coverage lowercase letters are reported
-    Read count below n_threshold are reported as ambiguous base 'n'.
-    If there is no n_threshold, base with zero count output 'n' or if reference available take value of reference.
-    '''
-    max_index = np.argmax(first_base[1])
-    if np.sum(first_base[1])< min_coverage:
-        # if read depth bigger than n_thres but still lower than min_coverage
-        # cast lowercase
-        first_base[0][max_index]= np.char.lower(first_base[0][max_index])
 
-    if (n_threshold is None):
-        if (np.sum(first_base[1])==0):
-            # if there are is no n_thres but we have zero counts at position
-            # return 'n' or reference[curr_pos]
-            if reference is None:
-                first_base[0][max_index] = 'n'
-            else:
-                reference = pysam.FastaFile(reference)
-                assert reference.references[0] == reference_name, (
-                    "the name of the genomic region and the reference differ")
-                reference = reference.fetch(
-                    reference=reference_name, start=start, end=end).lower()
-                first_base[0][max_index] = reference[curr_pos]
-
-    elif np.sum(first_base[1]) < n_threshold:
-        first_base[0][max_index] = 'n'
-
-    return first_base
-
-def check_coverage2(first_base,base, min_coverage, n_threshold, curr_pos, reference = None,
+def check_coverage(first_base,base, min_coverage, n_threshold, curr_pos, reference = None,
                    reference_name = None, start=None, end=None):
     '''
     curr_pos: current position in the reference sequence
@@ -315,7 +283,7 @@ def main():
         if first_base[0].size > 0: # i.e. if we havent filtered out the whole column
             max_index = np.argmax(first_base[1])
             base = [first_base[0][max_index]]
-            base = check_coverage2(first_base, base, args.min_coverage,
+            base = check_coverage(first_base, base, args.min_coverage,
                                         args.n_threshold,reference_pos[idx], reference=args.reference,
                                         reference_name=reference_name, start=start,
                                         end=end)
@@ -339,7 +307,7 @@ def main():
                 cons_majority_deletions.append("*")
             else:
                 base = [first_base_deletions[0][max_index_deletions]]
-                base = check_coverage2(first_base_deletions,base,args.min_coverage,
+                base = check_coverage(first_base_deletions,base,args.min_coverage,
                                       args.n_threshold,reference_pos[idx],
                                       reference=args.reference,reference_name=reference_name,
                                       start=start,end=end)
@@ -356,7 +324,7 @@ def main():
 
         if first_base_ambiguous[0].size > 0: # i.e. if we havent filtered out the whole column
             base = ambiguous_bases(first_base_ambiguous, args.min_freq)
-            base = check_coverage2(first_base_ambiguous, base, args.min_coverage,
+            base = check_coverage(first_base_ambiguous, base, args.min_coverage,
                                     args.n_threshold,reference_pos[idx],
                                     reference=args.reference,reference_name=reference_name,
                                     start=start, end=end)
@@ -382,7 +350,7 @@ def main():
                 cons_majority_ambiguous_deletions.append("*")
             else:
                 base = ambiguous_bases(first_base_ambiguous_deletions, args.min_freq)
-                base = check_coverage2(first_base_ambiguous_deletions, base, args.min_coverage,
+                base = check_coverage(first_base_ambiguous_deletions, base, args.min_coverage,
                                        args.n_threshold,reference_pos[idx],
                                        reference=args.reference,reference_name=reference_name,
                                        start=start, end=end)
