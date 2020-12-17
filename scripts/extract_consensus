@@ -185,11 +185,11 @@ def ambiguous_bases(first_base, min_freq):
     idx= np.where(first_base[1]>=min_count)
 
     #TODO: what to do if len(idx) is zero, read counts are insufficient
-
+    if len(first_base[0][idx])==0:
+        return ['n']
     # only one base has relative frequency >= min_count
     if len(first_base[0][idx])==1:
-        ambiguous_base= first_base[0][idx]
-        return ambiguous_base
+        return first_base[0][idx]
     # IUPAC nucleotide code form
     # https://www.bioinformatics.org/sms/iupac.html
     if set(first_base[0][idx])==set(['A','G']):
@@ -214,8 +214,6 @@ def ambiguous_bases(first_base, min_freq):
         return ['V']
     if set(first_base[0][idx])==set(['G','A','C','T']):
         return ['N']
-    else:
-        print('Error in ambiguous_bases function')
 
 
 def main():
@@ -301,8 +299,8 @@ def main():
                                                   reference=args.reference,
                                                   reference_name=reference_name, start=start,
                                                   end=end)
-            # count if deletions account for more than all bases combined 
-            counts_del = first_base_deletions[1][first_base_deletions[0]=="*"] 
+            # count if deletions account for more than all bases combined
+            counts_del = first_base_deletions[1][first_base_deletions[0]=="*"]
             counts_notdel = np.sum(first_base_deletions[1][first_base_deletions[0]!="*"])
             # if deletions account for more than all bases combined output a deletion
             if counts_del > counts_notdel:
