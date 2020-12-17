@@ -246,6 +246,7 @@ def main():
     with pysam.AlignmentFile(args.bamfile, 'rb') as alnfile:
         if reference_name is None:
             reference_name = alnfile.references[0]
+        reference_length = alnfile.get_reference_length(reference_name)
         # make list of ([bases], [counts]) tuples at each pileup column
         pileup = alnfile.pileup(
             contig=reference_name, start=start, stop=end,
@@ -352,22 +353,36 @@ def main():
             cons_majority_ambiguous_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous_deletions))
 
     # 3. Write to output
+
+    # prepare and add leading and trailing n's for uncovered leading and trailing reference
+
+    leading_n = reference_pos[0] * 'n'
+    trailing_n = (reference_length - reference_pos[-1] -1) * 'n'
+
+    cons_majority = leading_n + ''.join(cons_majority) + trailing_n
+    cons_majority_deletions = leading_n + ''.join(cons_majority_deletions) + trailing_n
+    cons_majority_ambiguous = leading_n + ''.join(cons_majority_ambiguous) + trailing_n
+    cons_majority_ambiguous_deletions = leading_n + ''.join(cons_majority_ambiguous_deletions) + trailing_n
+
+    # make seq records
+
     cons_majority = SeqRecord(
-        Seq(''.join(cons_majority)), id=sampleID,
+        Seq(cons_majority), id=sampleID,
         description="| Majority-vote rule")
 
     cons_majority_dels = SeqRecord(
-        Seq(''.join(cons_majority_deletions)), id=sampleID,
+        Seq(cons_majority_deletions), id=sampleID,
         description="| Majority-vote rule")
 
     cons_ambig = SeqRecord(
-        Seq(''.join(cons_majority_ambiguous)), id=sampleID,
+        Seq(cons_majority_ambiguous) + trailing_n), id=sampleID,
         description="| Ambiguous bases")
-
 
     cons_ambig_dels = SeqRecord(
-        Seq(''.join(cons_majority_ambiguous_deletions)), id=sampleID,
+        Seq(cons_majority_ambiguous_deletions), id=sampleID,
         description="| Ambiguous bases")
+
+    # write to output
 
     with open(os.path.join(args.outdir, "ref_majority.fasta"), "w") as outfile:
         SeqIO.write(cons_majority, outfile, "fasta")
