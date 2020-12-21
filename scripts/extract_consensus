@@ -72,7 +72,7 @@ def first_base_count(seq_count_tuple):
 
     return (first_bases_uniques[0], counts_collapsed)
 
-def build_insert_matrix(seq_count_tuple):
+def build_insert_matrix(seq_count_tuple, n_insert_threshold =0):
     '''Build an insert matrix from a sequence count tuple.
 
     Parameters:
@@ -80,6 +80,8 @@ def build_insert_matrix(seq_count_tuple):
             The tuple contains a list of bases and (possibly) indels at this alignment column,
             and a list of the respective counts, as returned by np.unique(x, return_counts=True),
             where x is a column of a AlignmentFile.pileup()
+        n_insert_threshold: lower bound of number of reads with insertions for
+            the insertion is added to consensus
 
     Returns:
         insert_matrix: np.array [n_inserts, max_insert_length]
@@ -112,17 +114,15 @@ def build_insert_matrix(seq_count_tuple):
         while len(insert_matrix[m]) < length:
             insert_matrix[m].append('*') #replace here '*'->'-' if we arent supposed to count it as deletion
 
-    # TODO: check if we really want a threshold like this
-    # threshold when to add insertions
-    # number of insertions = np.shape(insert_matrix)[0]
-    '''
-    print('insert_matrix', np.shape(insert_matrix)[0])
-    print('coverage at this position ',np.sum(seq_count_tuple[1]))
-    if np.shape(insert_matrix)[0] < 0.3 * np.sum(seq_count_tuple[1]):
-        insert_matrix = []
-    '''
+    insert_matrix = np.array(insert_matrix)
+    # check for each insertion column if #reads with inserted bases > n_insert_threshold
+    if len(insert_matrix)>0:
+        for c in range(np.shape(insert_matrix)[1]):
+            if np.shape(np.where(insert_matrix[:,c]!="*"))[1] < n_insert_threshold:
+                return insert_matrix[:,:c]
+    return insert_matrix
 
-    return np.array(insert_matrix)
+
 
 def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C']):
     '''Function to build local consensus from insert matrix.
