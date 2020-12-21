@@ -72,7 +72,7 @@ def first_base_count(seq_count_tuple):
 
     return (first_bases_uniques[0], counts_collapsed)
 
-def build_insert_matrix(seq_count_tuple, n_insert_threshold =0):
+def build_insert_matrix(seq_count_tuple, min_coverage, n_insert_threshold =0):
     '''Build an insert matrix from a sequence count tuple.
 
     Parameters:
@@ -90,6 +90,7 @@ def build_insert_matrix(seq_count_tuple, n_insert_threshold =0):
     '''
     insert_matrix = []
     length = 0
+    coverage = np.sum(np.sum(seq_count_tuple[1]))
     #make list of insertions at that position
     for j in range(len(seq_count_tuple[0])):
         if (len(seq_count_tuple[0][j])>2) and (seq_count_tuple[0][j][1] == '+'):
@@ -116,7 +117,10 @@ def build_insert_matrix(seq_count_tuple, n_insert_threshold =0):
 
     insert_matrix = np.array(insert_matrix)
     # check for each insertion column if #reads with inserted bases > n_insert_threshold
-    if len(insert_matrix)>0:
+    if len(insert_matrix)>0: #e.g. if insert_matrix non-empty
+        if np.shape(insert_matrix)[0]<min_coverage:
+            insert_matrix = np.char.lower(insert_matrix)
+
         for c in range(np.shape(insert_matrix)[1]):
             if np.shape(np.where(insert_matrix[:,c]!="*"))[1] < n_insert_threshold:
                 return insert_matrix[:,:c]
@@ -285,7 +289,7 @@ def main():
         # get the counts for only the first base
         first_base_ambiguous_deletions = first_base_count(column)
         # build the insert matrix
-        insert_matrix = build_insert_matrix(column)
+        insert_matrix = build_insert_matrix(column,args.min_coverage)
 
         # 2.1 make consensus at column without deletions and without ambiguous bases
         index = np.in1d(first_base_ambiguous_deletions[0], alphabet)
