@@ -72,7 +72,7 @@ def first_base_count(seq_count_tuple):
 
     return (first_bases_uniques[0], counts_collapsed)
 
-def build_insert_matrix(seq_count_tuple, min_coverage, n_insert_threshold =0):
+def build_insert_matrix(seq_count_tuple):
     '''Build an insert matrix from a sequence count tuple.
 
     Parameters:
@@ -80,8 +80,6 @@ def build_insert_matrix(seq_count_tuple, min_coverage, n_insert_threshold =0):
             The tuple contains a list of bases and (possibly) indels at this alignment column,
             and a list of the respective counts, as returned by np.unique(x, return_counts=True),
             where x is a column of a AlignmentFile.pileup()
-        n_insert_threshold: lower bound of number of reads with insertions for
-            the insertion is added to consensus
 
     Returns:
         insert_matrix: np.array [n_inserts, max_insert_length]
@@ -116,19 +114,23 @@ def build_insert_matrix(seq_count_tuple, min_coverage, n_insert_threshold =0):
             insert_matrix[m].append('*') #replace here '*'->'-' if we arent supposed to count it as deletion
 
     insert_matrix = np.array(insert_matrix)
-    # check for each insertion column if #reads with inserted bases > n_insert_threshold
+    insert_list = []
+
     if len(insert_matrix)>0: #e.g. if insert_matrix non-empty
-        if np.shape(insert_matrix)[0]<min_coverage:
-            insert_matrix = np.char.lower(insert_matrix)
+        # go through columns of insert_matrix
+        for c in range(insert_matrix.shape[1]):
+            matrix_column = insert_matrix[:,c]
+            if matrix_column.size > 0: # i.e. if we havent filtered out the whole column
+                #keep most frequent
+                unique = np.unique(matrix_column, return_counts=True)
+                insert_list.append(unique)
 
-        for c in range(np.shape(insert_matrix)[1]):
-            if np.shape(np.where(insert_matrix[:,c]!="*"))[1] < n_insert_threshold:
-                return insert_matrix[:,:c]
-    return insert_matrix
+    return insert_list
 
 
 
-def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C']):
+def collapse_insert_matrix(insert_matrix, coverage_pos, min_coverage,min_freq,
+                        n_insert_thres=2,ambiguous = False, authorised_alphabet=['A', 'T', 'G', 'C']):
     '''Function to build local consensus from insert matrix.
 
     Parameters:
@@ -137,6 +139,11 @@ def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C
         authorised_alphabet: list of characters
             Characters in the insert_matrix that do not belong to authorised_alphabet will not be counted when
             building the local consensus.
+        coverage_pos: coverage at current position
+        min_coverage: for coverage < min_coverage output lowercase letters
+        n_insert_thres: if coverage < n_insert_thres then do not add insertion-column
+        ambiguous: if True, compute ambiguous base at position
+        min_freq: for computation of ambiguous base
 
     Returns:
         seq_out: list of characters
@@ -144,14 +151,23 @@ def collapse_insert_matrix(insert_matrix, authorised_alphabet=['A', 'T', 'G', 'C
 
     '''
     seq_out = []
-    for c in range(insert_matrix.shape[1]):
-        #filter matrix column keeping only elements of authorised alphabet
-        matrix_column = insert_matrix[:,c][np.in1d(insert_matrix[:,c], authorised_alphabet)]
-        if matrix_column.size > 0: # i.e. if we havent filtered out the whole column
-            #keep most frequent
-            unique = np.unique(matrix_column, return_counts=True)
-            max_index = np.argmax(unique[1])
-            seq_out.append(unique[0][max_index])
+
+    for column in insert_matrix:
+        index = np.in1d(column[0], authorised_alphabet)
+        first_base = (column[0][index],
+                      column[1][index])
+        max_index = np.argmax(first_base[1])
+        base = [first_base[0][max_index]]
+        if ambiguous == True:
+            base = ambiguous_bases(first_base,min_freq)
+        if coverage_pos < min_coverage:
+            # cast lowercase
+            base= np.char.lower(base)
+        if np.sum(first_base[1]) < n_insert_thres:
+            return seq_out
+        else:
+            seq_out.extend(base)
+
     return seq_out
 
 
@@ -200,7 +216,7 @@ def ambiguous_bases(first_base, min_freq):
     min_count = max(2, min_count)
     idx= np.where(first_base[1]>=min_count)
 
-    #TODO: what to do if len(idx) is zero, read counts are insufficient
+    # if len(idx) is zero, read counts are insufficient
     if len(first_base[0][idx])==0:
         return ['n']
     # only one base has relative frequency >= min_count
@@ -289,7 +305,8 @@ def main():
         # get the counts for only the first base
         first_base_ambiguous_deletions = first_base_count(column)
         # build the insert matrix
-        insert_matrix = build_insert_matrix(column,args.min_coverage)
+        insert_matrix = build_insert_matrix(column)
+
 
         # 2.1 make consensus at column without deletions and without ambiguous bases
         index = np.in1d(first_base_ambiguous_deletions[0], alphabet)
@@ -305,8 +322,11 @@ def main():
             cons_majority.extend(base)
         else: cons_majority.extend(['n']) # if we filtered out the whole column we use 'N'
         # add insertions
-        if insert_matrix.size > 0:
-            cons_majority.extend(collapse_insert_matrix(insert_matrix, alphabet))
+        if len(insert_matrix) > 0:
+            inserts = collapse_insert_matrix(insert_matrix,coverage_pos=np.sum(first_base[1]),
+                                            min_coverage=args.min_coverage, min_freq= args.min_freq,
+                                            authorised_alphabet=alphabet)
+            cons_majority.extend(inserts)
 
         # 2.2 make consensus at column with deletions and without ambiguous bases
         index_deletions = np.in1d(first_base_ambiguous_deletions[0], alphabet_deletions)
@@ -332,8 +352,11 @@ def main():
                 cons_majority_deletions.extend(base)
         else: cons_majority.append('n') # if we filtered out the whole column we use 'N'
         # add insertions
-        if insert_matrix.size > 0:
-            cons_majority_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_deletions))
+        if len(insert_matrix) > 0:
+            inserts = collapse_insert_matrix(insert_matrix,coverage_pos=np.sum(first_base_deletions[1]),
+                                            min_coverage=args.min_coverage, min_freq= args.min_freq,
+                                            authorised_alphabet=alphabet)
+            cons_majority_deletions.extend(inserts)
 
         # 2.3 make consensus at column without deletions and with ambiguous bases
         index_ambiguous = np.in1d(first_base_ambiguous_deletions[0], alphabet_ambiguous)
@@ -349,8 +372,12 @@ def main():
             cons_majority_ambiguous.extend(base)
         else: cons_majority.append('n') # if we filtered out the whole column we use 'N'
         # add insertions
-        if insert_matrix.size > 0:
-            cons_majority_ambiguous.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous))
+        if len(insert_matrix) > 0:
+            inserts = collapse_insert_matrix(insert_matrix,coverage_pos=np.sum(first_base_ambiguous[1]),
+                                            min_coverage=args.min_coverage, min_freq= args.min_freq,
+                                            ambiguous=True,
+                                            authorised_alphabet=alphabet_ambiguous)
+            cons_majority_ambiguous.extend(inserts)
 
         # 2.4 make consensus at column with deletions and with ambiguous bases
         index_ambiguous_deletions = np.in1d(first_base_ambiguous_deletions[0], alphabet_ambiguous_deletions)
@@ -378,8 +405,12 @@ def main():
                 cons_majority_ambiguous_deletions.extend(base)
         else: cons_majority.append('n') # if we filtered out the whole column we use 'N'
         # add insertions
-        if insert_matrix.size > 0:
-            cons_majority_ambiguous_deletions.extend(collapse_insert_matrix(insert_matrix, alphabet_ambiguous_deletions))
+        if len(insert_matrix) > 0:
+            inserts = collapse_insert_matrix(insert_matrix,coverage_pos=np.sum(first_base_ambiguous_deletions[1]),
+                                            min_coverage=args.min_coverage, min_freq= args.min_freq,
+                                            ambiguous=True,
+                                            authorised_alphabet=alphabet_ambiguous)
+            cons_majority_ambiguous.extend(inserts)
 
     # 3. Write to output
 
