@@ -218,35 +218,52 @@ def ambiguous_bases(first_base, min_freq):
     # if len(idx) is zero, read counts are insufficient
     if len(first_base[0][idx])==0:
         return ['n']
-    # only one base has relative frequency >= min_count
-    if len(first_base[0][idx])==1:
-        return first_base[0][idx]
-    # IUPAC nucleotide code form
-    # https://www.bioinformatics.org/sms/iupac.html
-    if set(first_base[0][idx])==set(['A','G']):
-        return ['R']
-    if set(first_base[0][idx])==set(['C','T']):
-        return ['Y']
-    if set(first_base[0][idx])==set(['G','C']):
-        return ['S']
-    if set(first_base[0][idx])==set(['A','T']):
-        return ['W']
-    if set(first_base[0][idx])==set(['T','G']):
-        return ['K']
-    if set(first_base[0][idx])==set(['A','C']):
-        return ['M']
-    if set(first_base[0][idx])==set(['G','C','T']):
-        return ['B']
-    if set(first_base[0][idx])==set(['G','A','T']):
-        return ['D']
-    if set(first_base[0][idx])==set(['C','A','T']):
-        return ['H']
-    if set(first_base[0][idx])==set(['G','A','C']):
-        return ['V']
-    if set(first_base[0][idx])==set(['G','A','C','T']):
-        return ['N']
+
+    thres_majority = max(5, 0.75*coverage)
+    idx_majority = np.where(first_base[1][idx]>=thres_majority)
+    # if there is a base or deletion that has counts bigger than thres_ambig
+    if len(first_base[0][idx][idx_majority])!= 0:
+        max_idx = np.argmax(first_base[1][idx][idx_majority])
+        return [first_base[0][idx][idx_majority][max_idx]]
     else:
-        return ['n']
+        thres_ambiguous = coverage*0.25
+        idx_ambiguous = np.where(first_base[1][idx]>=thres_ambiguous)
+        # if any base in the set has read-count < 5 report 'N'
+        idx_aux = np.where(first_base[1][idx][idx_ambiguous]<5)
+        if len(first_base[1][idx][idx_ambiguous][idx_aux])>0:
+            return ['N']
+        elif '-' in set(first_base[0][idx][idx_ambiguous]):
+            return ['N']
+        elif len(first_base[1][idx][idx_ambiguous])==1:
+            return ['N']
+        else:
+            ambiguous_set = first_base[0][idx][idx_ambiguous]
+            # IUPAC nucleotide code form
+            # https://www.bioinformatics.org/sms/iupac.html
+            if set(ambiguous_set)==set(['A','G']):
+                return ['R']
+            if set(ambiguous_set)==set(['C','T']):
+                return ['Y']
+            if set(ambiguous_set)==set(['G','C']):
+                return ['S']
+            if set(ambiguous_set)==set(['A','T']):
+                return ['W']
+            if set(ambiguous_set)==set(['T','G']):
+                return ['K']
+            if set(ambiguous_set)==set(['A','C']):
+                return ['M']
+            if set(ambiguous_set)==set(['G','C','T']):
+                return ['B']
+            if set(ambiguous_set)==set(['G','A','T']):
+                return ['D']
+            if set(ambiguous_set)==set(['C','A','T']):
+                return ['H']
+            if set(ambiguous_set)==set(['G','A','C']):
+                return ['V']
+            if set(ambiguous_set)==set(['G','A','C','T']):
+                return ['N']
+            else:
+                return ['n']
 
 
 def main():
